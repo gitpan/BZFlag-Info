@@ -7,7 +7,7 @@ use warnings;
 use LWP::UserAgent;
 use Socket;
 
-our $VERSION = '1.9.0';
+our $VERSION = '1.9.1';
 
 sub new {
     my $self = { };
@@ -79,6 +79,7 @@ sub serverlist(%) {
 	$response->{servers}->{$serverport}->{serverconfig}->{maxplayerscore} = $info{maxPlayerScore};
 	$response->{servers}->{$serverport}->{serverconfig}->{maxteamscore}   = $info{maxTeamScore};
 	$response->{servers}->{$serverport}->{serverconfig}->{maxtime}        = $info{maxTime};
+	$response->{servers}->{$serverport}->{serverconfig}->{maxplayers}     = $info{maxPlayers};
 	$response->{servers}->{$serverport}->{serverconfig}->{roguemax}       = $info{rogueMax};
 	$response->{servers}->{$serverport}->{serverconfig}->{redmax}         = $info{redMax};
 	$response->{servers}->{$serverport}->{serverconfig}->{greenmax}       = $info{greenMax};
