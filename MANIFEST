@@ -3,4 +3,5 @@ Info.pm
 Makefile.PL
 MANIFEST
 README
+info.pl
 t/1.t

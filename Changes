@@ -1,7 +1,14 @@
 Revision history for Perl extension BZFlag::Info
 
-1.7.1  Sun Nov 16 13:52:50 2003
-	- fixed bugs in the package
+1.10.0  Mon Dec 15 15:43:19 2003
+	- updated protocol to match servers in the 1.10 series
+	- made more useful by giving much more information about
+	  servers
+	- added parsestyle method
+	- added demo file, info.pl
 
-1.7.0  Thu Nov 13 06:16:17 2003
-	- original version; created for servers in the 1.7 series
+1.7.1   Sun Nov 16 13:52:50 2003
+ 	- fixed bugs in the package
+
+1.7.0   Thu Nov 13 06:16:17 2003
+ 	- original version; created for servers in the 1.7 series

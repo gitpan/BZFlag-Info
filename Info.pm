@@ -1,13 +1,13 @@
 package BZFlag::Info;
 
-use 5.6.1;
+use 5.006001;
 use strict;
 use warnings;
 
 use LWP::UserAgent;
 use Socket;
 
-our $VERSION = '1.7.1';
+our $VERSION = '1.10.0';
 
 sub new {
     my $self = { };
@@ -17,50 +17,83 @@ sub new {
 
 sub serverlist(%) {
     my $self = shift;
-
+    
     my %options;
     while (my @option = splice(@_, 0, 2)) {
 	$options{$option[0]} = $option[1];
     }
-
+    
     my $proxy = $options{Proxy};
     my $response;
     my $ua = new LWP::UserAgent;
     $ua->proxy('http', $proxy) if defined($proxy);
     
-    $ua->timeout(5);
+    $ua->timeout(10);
     
-    my $req = HTTP::Request->new('GET', $self->listserver);
+    my $req = HTTP::Request->new('GET', ($options{Server} ? $options{Server} : $self->listserver));
     my $res = $ua->request($req);
-    my %servers;
     my $totalServers = 0;
     my $totalPlayers = 0;
     for my $line (split("\n",$res->content)) {
-	my ($serverport, $version, $flags, $ip, $comments) = split(" ",$line,5);
-	# not "(A4)18" to handle old dumb perl
-	my ($style,$maxPlayers,$maxShots,
-	    $rogueSize,$redSize,$greenSize,$blueSize,$purpleSize,
-	    $rogueMax,$redMax,$greenMax,$blueMax,$purpleMax,
-	    $shakeWins,$shakeTimeout,
-	    $maxPlayerScore,$maxTeamScore,$maxTime) =
-		unpack("A4A4A4A4A4A4A4A4A4A4A4A4A4A4A4A4A4A4", $flags);
-	my $playerSize = hex($rogueSize) + hex($redSize) + hex($greenSize)
-	    + hex($blueSize) + hex($purpleSize);
-	$servers{$serverport} = $playerSize;
+	my ($serverport, $version, $flags, $ip, $description) = split(" ",$line,5);
+	
+	my @fields = ('style','maxShots','shakeWins','shakeTimeout','maxPlayerScore',
+	    'maxTeamScore','maxTime','maxPlayers','rogueSize','rogueMax','redSize',
+	    'redMax','greenSize','greenMax','blueSize','blueMax','purpleSize',
+	    'purpleMax','observerSize','observerMax'
+	    );
+
+	my @info = unpack("(A4)7 (A2)13", $flags);
+
+	my $counter = 0;
+	my %info;
+
+	foreach (@fields) {
+	    $info{$_} = oct('0x'.$info[$counter]);
+	    $counter++;
+	}
+	
+	my $playerSize = $info{rogueSize} + $info{redSize} + $info{greenSize}
+	    + $info{blueSize} + $info{purpleSize} + $info{observerSize};
+	
+	unless ($serverport =~ m/.*:\d+/) {
+	    $serverport = "$serverport:5154";
+	}
+	
+	$response->{servers}->{$serverport}->{version}     = $version;
+	$response->{servers}->{$serverport}->{ip}          = $ip;
+	$response->{servers}->{$serverport}->{description} = $description;
+	
+	$response->{servers}->{$serverport}->{numplayers}   = $playerSize;
+	$response->{servers}->{$serverport}->{roguesize}    = $info{rogueSize};
+	$response->{servers}->{$serverport}->{redsize}      = $info{redSize};
+	$response->{servers}->{$serverport}->{greensize}    = $info{greenSize};
+	$response->{servers}->{$serverport}->{bluesize}     = $info{blueSize};
+	$response->{servers}->{$serverport}->{purplesize}   = $info{purpleSize};
+	$response->{servers}->{$serverport}->{observersize} = $info{observerSize};
+
+	$response->{servers}->{$serverport}->{serverconfig}->{style}          = $self->parsestyle($info{style});
+	$response->{servers}->{$serverport}->{serverconfig}->{maxshots}       = $info{maxShots};
+	$response->{servers}->{$serverport}->{serverconfig}->{shakewins}      = $info{shakeWins};
+	$response->{servers}->{$serverport}->{serverconfig}->{shaketimeout}   = $info{shakeTimeout} / 10;
+	$response->{servers}->{$serverport}->{serverconfig}->{maxplayerscore} = $info{maxPlayerScore};
+	$response->{servers}->{$serverport}->{serverconfig}->{maxteamscore}   = $info{maxTeamScore};
+	$response->{servers}->{$serverport}->{serverconfig}->{maxtime}        = $info{maxTime};
+	$response->{servers}->{$serverport}->{serverconfig}->{roguemax}       = $info{rogueMax};
+	$response->{servers}->{$serverport}->{serverconfig}->{redmax}         = $info{redMax};
+	$response->{servers}->{$serverport}->{serverconfig}->{greenmax}       = $info{greenMax};
+	$response->{servers}->{$serverport}->{serverconfig}->{bluemax}        = $info{blueMax};
+	$response->{servers}->{$serverport}->{serverconfig}->{purplemax}      = $info{purpleMax};
+	$response->{servers}->{$serverport}->{serverconfig}->{observermax}    = $info{observerMax};
+
 	$totalServers += 1;
 	$totalPlayers += $playerSize;
     }
     $response->{totalservers} = $totalServers;
     $response->{totalplayers} = $totalPlayers;
 
-    foreach my $key (sort {$servers{$b} <=> $servers{$a}} (keys(%servers))) {
-#	if ($servers{$key} > 0) {
-	$response->{servers}->{$key}->{numplayers} = $servers{$key};
-#	}
-    }
-
     return ($response);
-    
+
 }    
 
 sub queryserver(%) {
@@ -74,12 +107,12 @@ sub queryserver(%) {
     my $hostandport = $options{Server};
     my $timeout = $options{Timeout};
 
-    #my @teamName = ("Rogue", "Red", "Green", "Blue", "Purple");
-    my @teamName = ("X", "R", "G", "B", "P");
+    my @teamName = ("X", "R", "G", "B", "P", "O", "H");
+#    my @teamName     = ("X", "R", "G", "B", "P");
     my ($message, $server);
     my $response;
     my ($servername, $port) = split(/:/, $hostandport);
-    $port = 5155 unless $port;
+    $port = 5154 unless $port;
     
     # socket define
     my $sockaddr = 'S n a4 x8';
@@ -94,29 +127,28 @@ sub queryserver(%) {
     $server = pack($sockaddr, AF_INET, $port, $serveraddr);
     
     # connect
-    unless (socket(S1, AF_INET, SOCK_STREAM, $proto)) {
+    unless (socket(S, AF_INET, SOCK_STREAM, $proto)) {
 	$self->{error} = 'errSocketError';
 	return undef;
     }
 
-    unless (connect(S1, $server)) {
+    unless (connect(S, $server)) {
 	$self->{error} = "errCouldNotConnect: $servername:$port";
 	return undef;
     }
     
     # don't buffer
-    select(S1); $| = 1; select(STDOUT);
+    select(S); $| = 1; select(STDOUT);
     
     # get hello
     my $buffer;
-    unless (read(S1, $buffer, 10) == 10) {
+    unless (read(S, $buffer, 9) == 9) {
 	$self->{error} = 'errReadError';
 	return undef;
     }
 
     # parse reply
-    my ($magic,$major,$minor,$revision);
-    ($magic,$major,$minor,$revision,$port) = unpack("a4 a1 a2 a1 n", $buffer);
+    my ($magic, $version, $id) = unpack("a4 a4 C1", $buffer);
     
     # quit if version isn't valid
     if ($magic ne "BZFS") {
@@ -124,35 +156,11 @@ sub queryserver(%) {
 	return undef;
     }
 
-    # try incompatible for BZFlag:Zero etc.
-    if (($major < 1) or ($major == 1 && $minor < 7) or ($major == 1 && $minor == 7 && $revision eq "b")) {
+    # try incompatible for 1.7, etc.
+    if ($version != '1910') {
 	$self->{error} = 'errIncompatibleVersion';
 	return undef;
     }
-    
-    # quit if rejected
-    if ($port == 0) {
-	$self->{error} = 'errRejectedByServer';
-	return undef;
-    }
-	    
-    
-    # reconnect on new port
-    $server = pack($sockaddr, AF_INET, $port, $serveraddr);
-    unless (socket(S, AF_INET, SOCK_STREAM, $proto)) {
-	$self->{error} = 'errSocketErrorOnReconnect';
-	return undef;
-    }
-
-    unless (connect(S, $server)) {
-	$self->{error} = "errCouldNotReconnect: $servername:$port";
-	return undef;
-    }
-
-    select(S); $| = 1; select(STDOUT);
-    
-    # close first socket
-    close(S1);
     
     # send game request
     print S pack("n2", 0, 0x7167);
@@ -168,10 +176,26 @@ sub queryserver(%) {
 	$rogueMax,$redMax,$greenMax,$blueMax,$purpleMax,
 	$shakeWins,$shakeTimeout,
 	$maxPlayerScore,$maxTeamScore,$maxTime) = unpack("n20", $buffer);
+
     unless ($infocode == 0x7167) {
 	$self->{error} = 'errBadServerData';
 	return undef;
     }
+
+    $response->{serverconfig}->{style} = $self->parsestyle($style);
+
+    $response->{serverconfig}->{maxplayers} = $maxPlayers;
+    $response->{serverconfig}->{maxshots} = $maxShots;
+    $response->{serverconfig}->{roguemax} = $rogueMax;
+    $response->{serverconfig}->{redmax} = $redMax;
+    $response->{serverconfig}->{greenmax} = $greenMax;
+    $response->{serverconfig}->{bluemax} = $blueMax;
+    $response->{serverconfig}->{purplemax} = $purpleMax;
+    $response->{serverconfig}->{shakewins} = $shakeWins;
+    $response->{serverconfig}->{shaketimeout} = $shakeTimeout;
+    $response->{serverconfig}->{maxplayerscore} = $maxPlayerScore;
+    $response->{serverconfig}->{maxteamscore} = $maxTeamScore;
+    $response->{serverconfig}->{maxtime} = $maxTime;
 
     # send players request
     print S pack("n2", 0, 0x7170);
@@ -188,18 +212,29 @@ sub queryserver(%) {
 	return undef;
     }
 
+    $response->{numplayers} = $numPlayers;
+
+    unless (read(S, $buffer, 5) == 5) {
+	$self->{error} = 'errCountReadError';
+	return undef;
+    }
+
+    my ($countlen2, $countcode2, $numTeams2) = unpack("n2 C", $buffer);
+    unless ($countcode2 == 0x7475) {
+	$self->{error} = 'errBadCountData';
+        return undef;
+    }
+
+    $response->{numteams} = $numTeams2;
+
     # get the teams
-    for (1..$numTeams) {
-	unless (read(S, $buffer, 14) == 14) {
+    for (1..$numTeams2) {
+	unless (read(S, $buffer, 8) == 8) {
 	    $self->{error} = 'errTeamReadError';
 	    return undef;
 	}
 
-	my ($teamlen,$teamcode,$team,$size,$aSize,$wins,$losses) = unpack("n7", $buffer);
-	unless ($teamcode == 0x7475) {
-	    $self->{error} = 'errBadTeamData';
-	    return undef;
-	}
+	my ($team, $size, $wins, $losses) = unpack("n4", $buffer);
 
 	my $score = $wins - $losses;
 
@@ -207,27 +242,29 @@ sub queryserver(%) {
 	$response->{teams}->{$teamName[$team]}->{score}  = $score;
 	$response->{teams}->{$teamName[$team]}->{wins}   = $wins;
 	$response->{teams}->{$teamName[$team]}->{losses} = $losses;
-	    
+	
     }
     
     # get the players
     for (1..$numPlayers) {
-	next if read(S, $buffer, 180) == 18;
-	my ($playerlen,$playercode,$pAddr,$pPort,$pNum,$type,$team,$wins,$losses,$sign,$email) =
-	    unpack("n2Nn2 n4A32A128", $buffer);	
-	unless ($playercode == 0x6170) {
+	next unless (read(S, $buffer, 175) == 175);
+	my ($len, $code, $pID, $type, $team, $wins, $losses, $tks, $callsign, $email) = 
+	    unpack("n2 C n5 A32 A128", $buffer);
+
+	unless ($code == 0x6170) {
 	    $self->{error} = 'errBadPlayerData';
 	    return undef;
 	}
-	
+
 	my $score = $wins - $losses;
 
-	$response->{players}->{$sign}->{team}   = $teamName[$team];
-	$response->{players}->{$sign}->{email}  = $email;
-	$response->{players}->{$sign}->{score}  = $score;
-	$response->{players}->{$sign}->{wins}   = $wins;
-	$response->{players}->{$sign}->{losses} = $losses;
-	$response->{players}->{$sign}->{ip}     = inet_ntoa(inet_aton($pAddr));
+	$response->{players}->{$callsign}->{team}   = $teamName[$team];
+	$response->{players}->{$callsign}->{email}  = $email;
+	$response->{players}->{$callsign}->{score}  = $score;
+	$response->{players}->{$callsign}->{wins}   = $wins;
+	$response->{players}->{$callsign}->{losses} = $losses;
+	$response->{players}->{$callsign}->{tks}    = $tks;
+	$response->{players}->{$callsign}->{pID}    = $pID;
 
     }
     if ($numPlayers <= 1) {
@@ -242,6 +279,75 @@ sub queryserver(%) {
 
 }
 
+sub parsestyle ($) {
+    my $self = shift;
+    my $style = shift;
+
+    my $response;
+
+    if ($style & 0x0001) { 
+	$response->{ctf} = 1;
+    } else {
+	$response->{ctf} = 0;
+    }
+    
+    if ($style & 0x0002) { 
+	$response->{superflags} = 1;
+    } else {
+	$response->{superflags} = 0;
+    }
+    
+    if ($style & 0x0004) { 
+	$response->{rogues} = 1;
+    } else {
+	$response->{rogues} = 0;
+    }
+    
+    if ($style & 0x0008) { 
+	$response->{jumping} = 1;
+    } else {
+	$response->{jumping} = 0;
+    }
+    
+    if ($style & 0x0010) { 
+	$response->{inertia} = 1;
+    } else {
+	$response->{inertia} = 0;
+    }
+    
+    if ($style & 0x0020) { 
+	$response->{ricochet} = 1;
+    } else {
+	$response->{ricochet} = 0;
+    }
+    
+    if ($style & 0x0040) { 
+	$response->{shakable} = 1;
+    } else {
+	$response->{shakable} = 0;
+    }
+    
+    if ($style & 0x0080) { 
+	$response->{antidoteflags} = 1;
+    } else {
+	$response->{antidoteflags} = 0;
+    }
+    
+    if ($style & 0x0100) { 
+	$response->{timesync} = 1;
+    } else {
+	$response->{timesync} = 0;
+    }
+    
+    if ($style & 0x0200) { 
+	$response->{rabbitchase} = 1;
+    } else {
+	$response->{rabbitchase} = 0;
+    }
+
+    return $response;
+}
+
 sub geterror {
     my $self = shift;
     return $self->{error};
@@ -249,21 +355,7 @@ sub geterror {
 
 sub listserver {
     my $self = shift;
-    my %options;
-    while (my @option = splice(@_, 0, 2)) {
-	$options{$option[0]} = $option[1];
-    }
-
-    my $ua = new LWP::UserAgent;
-    $ua->proxy('http', $options{Proxy}) if defined($options{Proxy});
-    $ua->timeout(5);
-
-    my $req = HTTP::Request->new('GET', 'http://BZFlag.SourceForge.net/list-server.txt');
-    my $res = $ua->request($req);
-    my ($listserver) = split("\n",$res->content);
-    $listserver =~ s/^bzflist/http/;
-
-    return $listserver;
+    return "http://db.bzflag.org/db/";
 }
 
 1;
@@ -281,7 +373,7 @@ BZFlag::Info - Extracts infomation about BZFlag servers and players
     my $bzinfo = new BZFlag::Info;
     
     my $serverlist = $bzinfo->serverlist;
-    my $serverlist = $bzinfo->serverlist(Proxy => 'host:port');
+    my $serverlist = $bzinfo->serverlist(Proxy => 'host:port', Server => 'http://listserver/');
     
     my $serverinfo = $bzinfo->queryserver(Server => 'host:port');
     
@@ -289,8 +381,8 @@ BZFlag::Info - Extracts infomation about BZFlag servers and players
 =head1 DESCRIPTION
 
 C<BZFlag::Info> is a class for extracting information about BZFlag clients
-and servers. Currently, 4 methods are implemented, C<new>,
-C<serverlist>, C<queryserver>, and C<geterror>.
+and servers. Currently, 6 methods are implemented, C<new>,
+C<serverlist>, C<queryserver>, C<parsestyle>, C<listserver>, and C<geterror>.
 
 =head1 METHODS
 
@@ -307,39 +399,53 @@ returns a data structure that would be displayed by C<Data::Dumper>
 like this:
 
     $VAR1 = {
-              'totalservers' => 8,
-              'totalplayers' => 42,
-              'servers' => {
-                             'ducati.bzflag.org:5155' => {
-                                                           'numplayers' => 0
+          'totalservers' => 1,
+          'totalplayers' => 6
+          'servers' => {
+                         'bzflag.secretplace.us:5255' => {
+                                                           'serverconfig' => {
+                                                                               'purplemax' => 5,
+                                                                               'redmax' => 5,
+                                                                               'bluemax' => 5,
+                                                                               'greenmax' => 5,
+                                                                               'roguemax' => 10,
+                                                                               'shakewins' => 1,
+                                                                               'observermax' => 5,
+                                                                               'style' => {
+                                                                                            'ctf' => 0,
+                                                                                            'jumping' => 1,
+                                                                                            'shakable' => 1,
+                                                                                            'antidoteflags' => 1,
+                                                                                            'inertia' => 0,
+                                                                                            'ricochet' => 1,
+                                                                                            'timesync' => 0,
+                                                                                            'rabbitchase' => 0,
+                                                                                            'superflags' => 1,
+                                                                                            'rogues' => 0
+                                                                                          },
+                                                                               'maxshots' => 10,
+                                                                               'maxteamscore' => 0,
+                                                                               'shaketimeout' => '5',
+                                                                               'maxtime' => 0,
+                                                                               'maxplayerscore' => 0
+                                                                             },
+                                                           'ip' => '69.28.129.162',
+                                                           'version' => 'BZFS1910',
+                                                           'redsize' => 0,
+                                                           'description' => 'Now playing Spirals 3.0 by BZDoug.',
+                                                           'bluesize' => 1,
+                                                           'numplayers' => 6,
+                                                           'roguesize' => 4,
+                                                           'observersize' => 0,
+                                                           'purplesize' => 0,
+                                                           'greensize' => 1
                                                          },
-                             'quol.bzflag.org:8085' => {
-                                                         'numplayers' => 0
-                                                       },
-                             'bzflag.secretplace.us:5155' => {
-                                                               'numplayers' => 18
-                                                             },
-                             'lbdpc15.epfl.ch:5155' => {
-                                                         'numplayers' => 8
-                                                       },
-                             'q2.bzflag.org:8083' => {
-                                                       'numplayers' => 0
-                                                     },
-                             'ducati.bzflag.org:5156' => {
-                                                           'numplayers' => 7
-                                                         },
-                             'bzflag.servegame.com:5155' => {
-                                                              'numplayers' => 0
-                                                            },
-                             'bzflag.freedomlives.net:5155' => {
-                                                                 'numplayers' => 9
-                                                               },
-                           }
-            };
-    
+	  };
 
-It can also take one option, Proxy, where you can specify a proxy
-server to handle the HTTP request.
+
+It can also take 2 options. The Proxy option specifies a proxy server
+to handle the HTTP request. The Server option specifies an alternate
+BZFlag list server to retrieve the server list from.
 
 =item my $serverinfo = $bzinfo->queryserver(Server => 'host:port');
 
@@ -347,65 +453,116 @@ C<queryserver> extracts information about players and teams from the
 BZFlag server specified with the Server option. It returns a data
 structure that would be displayed by C<Data::Dumper> like this:
 
+    ## brlcad.org:14244
+
     $VAR1 = {
-              'teams' => {
-                           'X' => {
-                                    'losses' => 0,
-                                    'wins' => 0,
-                                    'score' => 0,
-                                    'size' => 0
-                                  },
-                           'P' => {
-                                    'losses' => 0,
-                                    'wins' => 7,
-                                    'score' => 7,
-                                    'size' => 1
-                                  },
-                           'R' => {
-                                    'losses' => 8,
-                                    'wins' => 0,
-                                    'score' => -8,
-                                    'size' => 1
-                                  },
-                           'G' => {
-                                    'losses' => 0,
-                                    'wins' => 0,
-                                    'score' => 0,
-                                    'size' => 0
-                                  },
-                           'B' => {
-                                    'losses' => 0,
-                                    'wins' => 0,
-                                    'score' => 0,
-                                    'size' => 0
-                                  }
-                         },
-              'players' => {
-                             'xabner' => {
-                                           'losses' => 8,
-                                           'wins' => 0,
-                                           'email' => '',
-                                           'ip' => '123.123.123.123',
-                                           'score' => -8,
-                                           'team' => 'R'
+          'numplayers' => 2,
+          'serverconfig' => {
+                              'purplemax' => 200,
+                              'redmax' => 200,
+                              'bluemax' => 200,
+                              'shakewins' => 0,
+                              'greenmax' => 200,
+                              'roguemax' => 200,
+                              'style' => {
+                                           'ctf' => 1,
+                                           'jumping' => 1,
+                                           'shakable' => 0,
+                                           'antidoteflags' => 1,
+                                           'inertia' => 0,
+                                           'ricochet' => 1,
+                                           'timesync' => 0,
+                                           'rabbitchase' => 0,
+                                           'superflags' => 1,
+                                           'rogues' => 0
                                          },
-                             'mackattack' => {
-                                               'losses' => 0,
-                                               'wins' => 7,
-                                               'email' => 'user@hostname',
-                                               'ip' => '123.123.123.123',
-                                               'score' => 7,
-                                               'team' => 'P'
-                                             }
-                           }
-            };
+                              'maxshots' => 2,
+                              'maxteamscore' => 10,
+                              'maxplayers' => 8,
+                              'maxtime' => 0,
+                              'shaketimeout' => 0,
+                              'maxplayerscore' => 100
+                            },
+          'numteams' => 5,
+          'teams' => {
+                       'X' => {
+                                'losses' => 0,
+                                'wins' => 0,
+                                'score' => 0,
+                                'size' => 1
+                              },
+                       'P' => {
+                                'losses' => 0,
+                                'wins' => 0,
+                                'score' => 0,
+                                'size' => 0
+                              },
+                       'R' => {
+                                'losses' => 0,
+                                'wins' => 0,
+                                'score' => 0,
+                                'size' => 0
+                              },
+                       'G' => {
+                                'losses' => 0,
+                                'wins' => 0,
+                                'score' => 0,
+                                'size' => 0
+                              },
+                       'B' => {
+                                'losses' => 0,
+                                'wins' => 0,
+                                'score' => 0,
+                                'size' => 1
+                              }
+                     },
+          'players' => {
+                         'romfis' => {
+                                       'losses' => 34,
+                                       'wins' => 95,
+                                       'email' => 'Roman Fischer@fischer-medion',
+                                       'pID' => 1,
+                                       'score' => 61,
+                                       'team' => 'X',
+                                       'tks' => 0
+                                     },
+                         'slowfox' => {
+                                        'losses' => 80,
+                                        'wins' => 29,
+                                        'email' => 'tester@linux.local',
+                                        'pID' => 0,
+                                        'score' => -51,
+                                        'team' => 'B',
+                                        'tks' => 0
+                                      }
+                       }
+        };
 
-
-X, R, G, B, and P stand for Rogue, Red, Green, Blue, and Purple,
-respectively.
+X, R, G, B, P, O, and H stand for Rogue, Red, Green, Blue, Purple,
+Observer, and Rabbit, respectively.
 
 If there was an error retrieving information on a BZFlag server,
 C<queryserver> will return undef, C<geterror> will return the error.
+
+=item my $styleinfo = $bzinfo->parsestyle($style);
+
+C<parsestyle> extracts information about game style from one of the
+style field returned from either the list server or the game server.
+BZFlag server specified with the Server option. It returns a data
+structure that would be displayed by C<Data::Dumper> like this:
+
+    $VAR1 = {
+           'ctf' => 1,
+	   'jumping' => 1,
+	   'shakable' => 0,
+	   'antidoteflags' => 1,
+	   'inertia' => 0,
+	   'ricochet' => 1,
+	   'timesync' => 0,
+	   'rabbitchase' => 0,
+	   'superflags' => 1,
+	   'rogues' => 0
+	 },
 
 =back
 
