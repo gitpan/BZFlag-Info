@@ -1,4 +1,4 @@
-BZFlag::Info version 1.9.1
+BZFlag::Info version 1.9.2
 ==========================
 
 The BZFlag::Info module provides a class for extracting information about BZFlag servers.
@@ -21,7 +21,7 @@ Socket
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2003 Tucker McLean, Tim Riker
+Copyright (C) 2003-2004 Tucker McLean, Tim Riker
 
 This program is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

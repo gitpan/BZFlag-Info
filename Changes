@@ -1,5 +1,8 @@
 Revision history for Perl extension BZFlag::Info
 
+1.9.2   Wed Oct  6 11:09:33 PDT 2004
+	- fix for list server problem
+
 1.9.1   Tue Dec 16 18:58:33 PST 2003
 	- stupid oversight of maxplayers in serverlist
 

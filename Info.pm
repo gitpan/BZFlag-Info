@@ -7,7 +7,7 @@ use warnings;
 use LWP::UserAgent;
 use Socket;
 
-our $VERSION = '1.9.1';
+our $VERSION = '1.9.2';
 
 sub new {
     my $self = { };
@@ -356,7 +356,7 @@ sub geterror {
 
 sub listserver {
     my $self = shift;
-    return "http://db.bzflag.org/db/";
+    return "http://list.bzflag.bz/db/";
 }
 
 1;
