@@ -7,7 +7,7 @@ use warnings;
 use LWP::UserAgent;
 use Socket;
 
-our $VERSION = '1.10.0';
+our $VERSION = '1.9.0';
 
 sub new {
     my $self = { };
